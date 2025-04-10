@@ -3,15 +3,35 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import logging
+import pickle
+import os
 
 logger = logging.getLogger(__name__)
 
-def fetch_stock_data(ticker, start_date="2020-01-01", end_date="2025-04-09", cache=None):
-    """Fetch stock data from Yahoo Finance with optional caching."""
-    cache_key = f"{ticker}_{start_date}_{end_date}"
-    if cache and cache_key in cache:
-        logger.info(f"Returning cached data for {ticker}")
-        return cache[cache_key]
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+def load_cache(ticker, start_date="2020-01-01", end_date="2025-04-09"):
+    """Load cached stock data from disk."""
+    cache_file = os.path.join(CACHE_DIR, f"{ticker}_{start_date}_{end_date}.pkl")
+    if os.path.exists(cache_file):
+        with open(cache_file, 'rb') as f:
+            logger.info(f"Loaded cached data for {ticker} from {cache_file}")
+            return pickle.load(f)
+    return None
+
+def save_cache(ticker, data, start_date="2020-01-01", end_date="2025-04-09"):
+    """Save stock data to disk cache."""
+    cache_file = os.path.join(CACHE_DIR, f"{ticker}_{start_date}_{end_date}.pkl")
+    with open(cache_file, 'wb') as f:
+        pickle.dump(data, f)
+    logger.info(f"Saved data for {ticker} to {cache_file}")
+
+def fetch_stock_data(ticker, start_date="2020-01-01", end_date="2025-04-09"):
+    """Fetch stock data from Yahoo Finance with persistent caching."""
+    cached_data = load_cache(ticker, start_date, end_date)
+    if cached_data is not None:
+        return cached_data
 
     try:
         stock_data = yf.download(ticker, start=start_date, end=end_date)
@@ -21,8 +41,7 @@ def fetch_stock_data(ticker, start_date="2020-01-01", end_date="2025-04-09", cac
         # Ensure daily frequency
         stock_data = stock_data.asfreq('D', method='ffill')
         logger.info(f"Fetched {len(stock_data)} rows for {ticker}")
-        if cache is not None:
-            cache[cache_key] = stock_data[['Close']]
+        save_cache(ticker, stock_data[['Close']], start_date, end_date)
         return stock_data[['Close']]
     except Exception as e:
         logger.error(f"Error fetching data for {ticker}: {e}")

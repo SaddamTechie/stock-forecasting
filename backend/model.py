@@ -1,12 +1,17 @@
 from statsmodels.tsa.arima.model import ARIMA
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Input
 import numpy as np
 from data import preprocess_data
 import pandas as pd
 import logging
+import os
+import pickle
 
 logger = logging.getLogger(__name__)
+
+MODEL_DIR = "models"
+os.makedirs(MODEL_DIR, exist_ok=True)
 
 class StockPredictor:
     def __init__(self, seq_length=10):
@@ -14,8 +19,45 @@ class StockPredictor:
         self.arima_model = None
         self.lstm_model = None
         self.scaler = None
+        self.arima_file = os.path.join(MODEL_DIR, "arima_model.pkl")
+        self.lstm_file = os.path.join(MODEL_DIR, "lstm_model.h5")
+        self.scaler_file = os.path.join(MODEL_DIR, "scaler.pkl")
 
-    def train_arima(self, data, order=(5, 1, 0)):
+    def load_models(self, ticker):
+        """Load trained models from disk if available."""
+        arima_path = f"{self.arima_file}_{ticker}"
+        lstm_path = f"{self.lstm_file}_{ticker}"
+        scaler_path = f"{self.scaler_file}_{ticker}"
+        
+        if os.path.exists(arima_path):
+            with open(arima_path, 'rb') as f:
+                self.arima_model = pickle.load(f)
+            logger.info(f"Loaded ARIMA model for {ticker}")
+        
+        if os.path.exists(lstm_path) and os.path.exists(scaler_path):
+            self.lstm_model = load_model(lstm_path)
+            with open(scaler_path, 'rb') as f:
+                self.scaler = pickle.load(f)
+            logger.info(f"Loaded LSTM model and scaler for {ticker}")
+
+    def save_models(self, ticker):
+        """Save trained models to disk."""
+        arima_path = f"{self.arima_file}_{ticker}"
+        lstm_path = f"{self.lstm_file}_{ticker}"
+        scaler_path = f"{self.scaler_file}_{ticker}"
+        
+        if self.arima_model:
+            with open(arima_path, 'wb') as f:
+                pickle.dump(self.arima_model, f)
+            logger.info(f"Saved ARIMA model for {ticker}")
+        
+        if self.lstm_model and self.scaler:
+            self.lstm_model.save(lstm_path)
+            with open(scaler_path, 'wb') as f:
+                pickle.dump(self.scaler, f)
+            logger.info(f"Saved LSTM model and scaler for {ticker}")
+
+    def train_arima(self, data, order=(2, 1, 2)):  # Adjusted order for better fit
         """Train ARIMA model."""
         try:
             self.arima_model = ARIMA(data, order=order).fit()
@@ -25,12 +67,13 @@ class StockPredictor:
             raise
 
     def train_lstm(self, X_train, y_train, epochs=20):
-        """Train LSTM model."""
+        """Train LSTM model with improved architecture."""
         try:
             self.lstm_model = Sequential([
                 Input(shape=(self.seq_length, 1)),
-                LSTM(50, return_sequences=True),
+                LSTM(100, return_sequences=True),  # Increased units
                 LSTM(50),
+                Dense(25, activation='relu'),      # Added dense layer
                 Dense(1)
             ])
             self.lstm_model.compile(optimizer='adam', loss='mse')
@@ -40,17 +83,22 @@ class StockPredictor:
             logger.error(f"Error training LSTM: {e}")
             raise
 
-    def predict(self, closing_prices, days=10):
+    def predict(self, closing_prices, days=10, ticker="unknown"):
         """Hybrid prediction using ARIMA and LSTM."""
         try:
+            # Load existing models if available
+            self.load_models(ticker)
+            
             # Preprocess data
             X, _, self.scaler, data_diff = preprocess_data(closing_prices, self.seq_length)
             
-            # Train models if not already trained
+            # Train models if not loaded
             if not self.arima_model:
-                self.train_arima(closing_prices['Close'], order=(5, 1, 0))
+                self.train_arima(closing_prices['Close'])
+                self.save_models(ticker)
             if not self.lstm_model:
                 self.train_lstm(X, X[:, -1, :])
+                self.save_models(ticker)
             
             # ARIMA forecast
             arima_pred = self.arima_model.forecast(steps=days)
@@ -68,8 +116,8 @@ class StockPredictor:
             lstm_pred = self.scaler.inverse_transform(np.array(lstm_pred).reshape(-1, 1))
             logger.info(f"LSTM predicted {len(lstm_pred)} steps")
             
-            # Hybrid prediction (simple average)
-            hybrid_pred = (arima_pred + lstm_pred.flatten()) / 2
+            # Hybrid prediction (weighted average: 40% ARIMA, 60% LSTM)
+            hybrid_pred = 0.4 * arima_pred + 0.6 * lstm_pred.flatten()
             
             # Generate future dates
             last_date = closing_prices.index[-1]

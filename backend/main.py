@@ -7,6 +7,7 @@ import logging
 from functools import lru_cache
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,8 +24,7 @@ app.add_middleware(
 
 predictor = StockPredictor(seq_length=10)
 
-# Simple in-memory cache
-data_cache = {}
+
 
 @lru_cache(maxsize=100)
 def get_stock_info(ticker):
@@ -40,9 +40,9 @@ def get_stock_info(ticker):
 async def predict_stock(ticker: str, days: int = 10):
     """Predict stock prices and return historical data."""
     try:
-        # Fetch data with caching
+        # Fetch data with persistent caching
         logger.info(f"Fetching data for ticker: {ticker}")
-        closing_prices = fetch_stock_data(ticker, cache=data_cache)
+        closing_prices = fetch_stock_data(ticker)
         if closing_prices.empty or len(closing_prices) < predictor.seq_length + 1:
             logger.error(f"Insufficient data for {ticker}: {len(closing_prices)} rows")
             raise HTTPException(status_code=400, detail=f"Insufficient data for {ticker}. Need at least {predictor.seq_length + 1} days.")
@@ -58,11 +58,11 @@ async def predict_stock(ticker: str, days: int = 10):
         stock_name = info.get("longName", ticker)
         
         # Access last price safely
-        last_price = closing_prices['Close'].iloc[-1]  # Already scalar due to iloc
+        last_price = closing_prices['Close'].iloc[-1]
         
         # Generate predictions with dates
         logger.info(f"Generating predictions for {ticker}")
-        predictions, future_dates = predictor.predict(closing_prices, days)
+        predictions, future_dates = predictor.predict(closing_prices, days, ticker)
         
         # Historical data (last 30 days for chart)
         historical_data = closing_prices.tail(30)
@@ -74,7 +74,7 @@ async def predict_stock(ticker: str, days: int = 10):
         return {
             "ticker": ticker,
             "stock_name": stock_name,
-            "last_price": float(last_price),  # last_price is already a scalar
+            "last_price": float(last_price),
             "historical": [
                 {"date": str(date), "price": float(price)}
                 for date, price in zip(historical_data.index, historical_data['Close'].values)
