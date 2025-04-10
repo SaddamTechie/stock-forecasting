@@ -15,6 +15,12 @@ import { FaChartLine, FaSpinner, FaExclamationTriangle, FaSync, FaHistory } from
 import { toast, Toaster } from 'sonner';
 import { motion } from 'framer-motion';
 import './App.css';
+const API_URL = import.meta.env.VITE_API_URL; 
+// Check if API_URL is defined
+if (!API_URL) {
+  console.error('API_URL is not defined. Please set it in your .env file.');
+}
+
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -75,7 +81,7 @@ function App() {
     }, 1000);
 
     try {
-      const response = await axios.get(`http://localhost:8000/predict/${tickerToFetch}`);
+      const response = await axios.get(`${API_URL}/predict/${tickerToFetch}`);
       setData(response.data);
       setLastUpdated(new Date().toLocaleTimeString());
       toast.success(`Data loaded for ${tickerToFetch}`);
@@ -245,16 +251,16 @@ function App() {
           ))}
         </motion.div>
 
-        {/* {searchHistory.length > 0 && (
+        {searchHistory.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="mb-8"
           >
-            <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center justify-center sm:justify-start">
+            <div className="text-lg font-semibold text-gray-800 mb-2 flex items-center justify-center sm:justify-start">
               <FaHistory className="mr-2" /> Recent Searches
-            </h3>
+            </div>
             <div className="flex flex-wrap gap-2 sm:gap-4 justify-center sm:justify-start">
               {searchHistory.map((hist, idx) => (
                 <motion.button
@@ -269,7 +275,7 @@ function App() {
               ))}
             </div>
           </motion.div>
-        )} */}
+        )}
 
         {error && (
           <motion.div
