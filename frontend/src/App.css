@@ -1,32 +1,13 @@
-.App {
-  text-align: center;
-  padding: 20px;
+/* Minimal custom CSS since Tailwind handles most styling */
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
 
-input {
-  padding: 10px;
-  margin-right: 10px;
-  font-size: 16px;
-}
-
-button {
-  padding: 10px 20px;
-  font-size: 16px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
-
-button:hover {
-  background-color: #45a049;
-}
-
-ul {
-  list-style-type: none;
-  padding: 0;
-}
-
-li {
-  margin: 5px 0;
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

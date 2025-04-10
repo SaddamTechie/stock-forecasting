@@ -2,16 +2,16 @@ from fastapi import FastAPI, HTTPException
 import uvicorn
 from data import fetch_stock_data
 from model import StockPredictor
-from pymongo import MongoClient
+import yfinance as yf
+import logging
+from functools import lru_cache
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
-predictor = StockPredictor(seq_length=10)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Optional MongoDB connection
-client = MongoClient("mongodb+srv://techspa254:bFywDX77eB3U3nrr@cluster0.dbubt.mongodb.net/stock-forecast?retryWrites=true&w=majority&appName=Cluster0")
-db = client["stock_db"]
-collection = db["predictions"]
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,28 +21,74 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+predictor = StockPredictor(seq_length=10)
+
+# Simple in-memory cache
+data_cache = {}
+
+@lru_cache(maxsize=100)
+def get_stock_info(ticker):
+    """Fetch stock info with LRU caching."""
+    try:
+        stock = yf.Ticker(ticker)
+        return stock.info
+    except Exception as e:
+        logger.error(f"Error fetching stock info for {ticker}: {e}")
+        raise
+
 @app.get("/predict/{ticker}")
 async def predict_stock(ticker: str, days: int = 10):
-    """Predict stock prices for a given ticker."""
+    """Predict stock prices and return historical data."""
     try:
-        # Fetch data
-        closing_prices = fetch_stock_data(ticker)
-        if closing_prices.empty:
-            raise HTTPException(status_code=404, detail=f"No data found for ticker {ticker}")
+        # Fetch data with caching
+        logger.info(f"Fetching data for ticker: {ticker}")
+        closing_prices = fetch_stock_data(ticker, cache=data_cache)
+        if closing_prices.empty or len(closing_prices) < predictor.seq_length + 1:
+            logger.error(f"Insufficient data for {ticker}: {len(closing_prices)} rows")
+            raise HTTPException(status_code=400, detail=f"Insufficient data for {ticker}. Need at least {predictor.seq_length + 1} days.")
+
+        # Validate DataFrame structure
+        if 'Close' not in closing_prices.columns:
+            logger.error(f"DataFrame for {ticker} missing 'Close' column: {closing_prices.columns}")
+            raise HTTPException(status_code=500, detail=f"Invalid data format for {ticker}: missing 'Close' column")
+
+        # Fetch stock info with caching
+        logger.info(f"Fetching stock info for {ticker}")
+        info = get_stock_info(ticker)
+        stock_name = info.get("longName", ticker)
         
-        # Generate predictions
-        predictions = predictor.predict(closing_prices, days)
+        # Access last price safely
+        last_price = closing_prices['Close'].iloc[-1]  # Already scalar due to iloc
         
-        # Store in MongoDB (optional)
-        collection.insert_one({
+        # Generate predictions with dates
+        logger.info(f"Generating predictions for {ticker}")
+        predictions, future_dates = predictor.predict(closing_prices, days)
+        
+        # Historical data (last 30 days for chart)
+        historical_data = closing_prices.tail(30)
+        if historical_data.empty:
+            logger.error(f"No historical data available for {ticker} after tail(30)")
+            raise HTTPException(status_code=500, detail=f"No historical data available for {ticker}")
+
+        logger.info(f"Successfully processed {ticker}")
+        return {
             "ticker": ticker,
-            "predictions": predictions.tolist(),
-            "date": "2025-04-09"
-        })
-        
-        return {"ticker": ticker, "predictions": predictions.tolist()}
+            "stock_name": stock_name,
+            "last_price": float(last_price),  # last_price is already a scalar
+            "historical": [
+                {"date": str(date), "price": float(price)}
+                for date, price in zip(historical_data.index, historical_data['Close'].values)
+            ],
+            "predictions": [
+                {"date": str(date), "price": float(price)}
+                for date, price in zip(future_dates, predictions)
+            ]
+        }
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error predicting stock prices: {str(e)}")
+        logger.error(f"Error predicting stock prices for {ticker}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error predicting stock prices for {ticker}: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
