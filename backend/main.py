@@ -7,7 +7,6 @@ import logging
 from functools import lru_cache
 from fastapi.middleware.cors import CORSMiddleware
 
-
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,8 +22,6 @@ app.add_middleware(
 )
 
 predictor = StockPredictor(seq_length=10)
-
-
 
 @lru_cache(maxsize=100)
 def get_stock_info(ticker):
@@ -62,7 +59,7 @@ async def predict_stock(ticker: str, days: int = 10):
         
         # Generate predictions with dates
         logger.info(f"Generating predictions for {ticker}")
-        predictions, future_dates = predictor.predict(closing_prices, days, ticker)
+        predictions, future_dates = predictor.predict(closing_prices, days, ticker=ticker)  # Pass ticker explicitly
         
         # Historical data (last 30 days for chart)
         historical_data = closing_prices.tail(30)
@@ -91,4 +88,4 @@ async def predict_stock(ticker: str, days: int = 10):
         raise HTTPException(status_code=500, detail=f"Error predicting stock prices for {ticker}: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

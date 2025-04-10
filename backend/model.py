@@ -19,15 +19,16 @@ class StockPredictor:
         self.arima_model = None
         self.lstm_model = None
         self.scaler = None
-        self.arima_file = os.path.join(MODEL_DIR, "arima_model.pkl")
-        self.lstm_file = os.path.join(MODEL_DIR, "lstm_model.h5")
-        self.scaler_file = os.path.join(MODEL_DIR, "scaler.pkl")
+        # Use consistent file extensions and paths
+        self.arima_file = os.path.join(MODEL_DIR, "arima_model_{}.pkl")
+        self.lstm_file = os.path.join(MODEL_DIR, "lstm_model_{}.h5")
+        self.scaler_file = os.path.join(MODEL_DIR, "scaler_{}.pkl")
 
     def load_models(self, ticker):
         """Load trained models from disk if available."""
-        arima_path = f"{self.arima_file}_{ticker}"
-        lstm_path = f"{self.lstm_file}_{ticker}"
-        scaler_path = f"{self.scaler_file}_{ticker}"
+        arima_path = self.arima_file.format(ticker)
+        lstm_path = self.lstm_file.format(ticker)
+        scaler_path = self.scaler_file.format(ticker)
         
         if os.path.exists(arima_path):
             with open(arima_path, 'rb') as f:
@@ -35,16 +36,16 @@ class StockPredictor:
             logger.info(f"Loaded ARIMA model for {ticker}")
         
         if os.path.exists(lstm_path) and os.path.exists(scaler_path):
-            self.lstm_model = load_model(lstm_path)
+            self.lstm_model = load_model(lstm_path, compile=False)  # Load without compiling
             with open(scaler_path, 'rb') as f:
                 self.scaler = pickle.load(f)
             logger.info(f"Loaded LSTM model and scaler for {ticker}")
 
     def save_models(self, ticker):
         """Save trained models to disk."""
-        arima_path = f"{self.arima_file}_{ticker}"
-        lstm_path = f"{self.lstm_file}_{ticker}"
-        scaler_path = f"{self.scaler_file}_{ticker}"
+        arima_path = self.arima_file.format(ticker)
+        lstm_path = self.lstm_file.format(ticker)
+        scaler_path = self.scaler_file.format(ticker)
         
         if self.arima_model:
             with open(arima_path, 'wb') as f:
@@ -52,12 +53,13 @@ class StockPredictor:
             logger.info(f"Saved ARIMA model for {ticker}")
         
         if self.lstm_model and self.scaler:
-            self.lstm_model.save(lstm_path)
+            # Use legacy HDF5 format explicitly
+            self.lstm_model.save(lstm_path, save_format='h5')
             with open(scaler_path, 'wb') as f:
                 pickle.dump(self.scaler, f)
             logger.info(f"Saved LSTM model and scaler for {ticker}")
 
-    def train_arima(self, data, order=(2, 1, 2)):  # Adjusted order for better fit
+    def train_arima(self, data, order=(2, 1, 2)):
         """Train ARIMA model."""
         try:
             self.arima_model = ARIMA(data, order=order).fit()
@@ -71,9 +73,9 @@ class StockPredictor:
         try:
             self.lstm_model = Sequential([
                 Input(shape=(self.seq_length, 1)),
-                LSTM(100, return_sequences=True),  # Increased units
+                LSTM(100, return_sequences=True),
                 LSTM(50),
-                Dense(25, activation='relu'),      # Added dense layer
+                Dense(25, activation='relu'),
                 Dense(1)
             ])
             self.lstm_model.compile(optimizer='adam', loss='mse')
