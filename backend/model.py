@@ -2,6 +2,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 import numpy as np
+from data import preprocess_data  # Import preprocess_data from data.py
 
 class StockPredictor:
     def __init__(self, seq_length=10):
