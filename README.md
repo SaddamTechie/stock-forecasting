@@ -1,7 +1,3 @@
-Below is a well-structured and informative README for your stock price prediction project. It covers the project overview, features, setup instructions, usage, file structure, and contribution guidelines, tailored to what we’ve built so far.
-
----
-
 # Stock Price Predictor
 
 A web application that fetches historical stock data and predicts future prices using a hybrid ARIMA-LSTM model. Built with a FastAPI backend and a React frontend, this project offers an intuitive UI with real-time predictions, ticker recommendations, and search history.
